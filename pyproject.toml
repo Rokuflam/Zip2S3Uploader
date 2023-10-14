@@ -1,0 +1,17 @@
+[tool.poetry]
+name = "zip2s3uploader"
+version = "0.1.0"
+description = "This Command-Line Interface (CLI) utility accepts a URL pointing to a ZIP archive as an input argument. It efficiently processes and concurrently uploads the contents of the ZIP archive to Amazon S3, ensuring enhanced performance."
+authors = ["Roman <98953084+Rokuflam@users.noreply.github.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.8"
+boto3 = "^1.28.63"
+
+[tool.poetry.group.dev.dependencies]
+moto = "^4.2.5"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
