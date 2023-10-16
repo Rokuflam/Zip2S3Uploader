@@ -11,6 +11,15 @@ To use the Zip to S3 Uploader, follow the instructions below:
 poetry install
 ```
 
+## Environment Variables
+
+This utility uses environment variables to configure AWS credentials for accessing your S3 bucket.:
+
+- **'AWS_ACCESS_KEY_ID'**: Your AWS Access Key ID.
+- **'AWS_SECRET_ACCESS_KEY'**:  Your AWS Secret Access Key.
+
+It is highly recommended to set these environment variables to keep your credentials secure, but  if you have a public s3 bucket, than leave it by default.
+
 ### Command-Line Usage
 Run the utility with the following command:
 
