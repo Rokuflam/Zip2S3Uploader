@@ -12,6 +12,11 @@ import zipfile
 from io import BytesIO
 
 
+# Set AWS credentials via environment variables
+AWS_ACCESS_KEY_ID = os.environ.get('AWS_ACCESS_KEY_ID', None)
+AWS_SECRET_ACCESS_KEY = os.environ.get('AWS_SECRET_ACCESS_KEY', None)
+
+
 def download_zip(zip_url):
     """
     Download a ZIP archive from a given URL.
@@ -94,7 +99,11 @@ def main():
     args = parser.parse_args()
 
     # Initialize S3 client.
-    s3_client = boto3.client('s3')
+    s3_client = boto3.client(
+        's3',
+        aws_access_key_id=AWS_ACCESS_KEY_ID,
+        aws_secret_access_key=AWS_SECRET_ACCESS_KEY
+    )
 
     # Download the ZIP archive from the provided URL.
     if args.verbose:
