@@ -17,6 +17,7 @@ This utility uses environment variables to configure AWS credentials for accessi
 
 - **'AWS_ACCESS_KEY_ID'**: Your AWS Access Key ID.
 - **'AWS_SECRET_ACCESS_KEY'**:  Your AWS Secret Access Key.
+- **'AWS_REGION_NAME'**:  Your AWS Region Name.
 
 It is highly recommended to set these environment variables to keep your credentials secure, but  if you have a public s3 bucket, than leave it by default.
 
