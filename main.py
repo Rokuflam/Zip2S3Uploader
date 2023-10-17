@@ -5,12 +5,10 @@ authors: ["Roman <98953084+Rokuflam@users.noreply.github.com>"]
 import argparse
 import boto3
 import concurrent.futures
-import os
 import requests
-import tempfile
+import os
 import zipfile
 from io import BytesIO
-
 
 # Set AWS credentials via environment variables
 AWS_ACCESS_KEY_ID = os.environ.get('AWS_ACCESS_KEY_ID', None)
@@ -30,45 +28,60 @@ def download_zip(zip_url):
     """
     try:
         response = requests.get(zip_url)
-        response.raise_for_status()  # Raise an exception for HTTP errors
+        response.raise_for_status()
         return BytesIO(response.content)
     except requests.exceptions.RequestException as e:
         raise Exception(f"Failed to download ZIP archive from {zip_url}: {e}")
 
 
-def upload_file_to_s3(file_path, file_name, bucket_name, s3_client):
+def extract_and_upload_file(zip_url, bucket_name, s3_client, concurrency_level=1):
     """
-    Upload a file to an S3 bucket.
-
-    Args:
-        file_path (str): The path to the local file to upload.
-        file_name (str): The name to give the file in the S3 bucket.
-        bucket_name (str): The name of the S3 bucket.
-        s3_client: An initialized Boto3 S3 client.
+    This function extracts files from a provided ZIP archive and concurrently
+    uploads them to an Amazon S3 bucket using multiple threads.
+    Parameters:
+    - zip_url (str): The URL of the ZIP archive to extract files from.
+    - bucket_name (str): The name of the Amazon S3 bucket where files will be uploaded.
+    - s3_client (boto3.client): The Amazon S3 client used for file uploads.
+    - concurrency_level (int, optional): The number of concurrent file uploads. Default is 1.
+    Behavior:
+    - It first downloads the ZIP archive from the specified URL.
+    - Then, it extracts files from the ZIP archive using the Python 'zipfile' library.
+    - For concurrent uploads, it spawns a thread pool executor with the given concurrency level.
+    - Each file extracted from the ZIP archive is submitted for uploading to the S3 bucket.
+    - The function waits for all uploads to complete before returning.
     """
-    with open(file_path, 'rb') as file:
-        s3_client.upload_fileobj(file, bucket_name, file_name)
+    zip_content = download_zip(zip_url)
+    with zipfile.ZipFile(zip_content, 'r') as zip_file:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency_level) as executor:
+            futures = []
+            for file_info in zip_file.infolist():
+                if not file_info.filename.endswith('/'):
+                    futures.append(executor.submit(upload_file, zip_file, file_info, bucket_name, s3_client))
+
+            concurrent.futures.wait(futures)  # Wait for all uploads to complete
 
 
-def extract_and_upload_file(zip_path, bucket_name, s3_client):
+def upload_file(zip_file, file_info, bucket_name, s3_client):
     """
-    Extract and upload files from a ZIP archive to an S3 bucket.
+    Uploads a file from a ZIP archive to an S3 bucket.
 
-    Args:
-        zip_path (str): The path to the ZIP archive.
-        bucket_name (str): The name of the S3 bucket.
-        s3_client: An initialized Boto3 S3 client.
+    This function takes a ZIP archive, extracts a specific file defined by 'file_info,'
+    and uploads it to the specified S3 bucket.
+
+    Parameters:
+    - zip_file (zipfile.ZipFile): The ZIP archive containing the file to be uploaded.
+    - file_info (zipfile.ZipInfo): Information about the file to be uploaded.
+    - bucket_name (str): The name of the S3 bucket where the file will be uploaded.
+    - s3_client (boto3.client): An S3 client used for uploading files to the S3 bucket.
+
+    Behavior:
+    - Opens the specified file within the ZIP archive.
+    - Uploads the file to the provided S3 bucket with the specified key.
+
     """
-    with zipfile.ZipFile(zip_path, 'r') as zip_file:
-        for file_info in zip_file.infolist():
-            if not file_info.filename.endswith('/'):
-                with zip_file.open(file_info.filename) as file:
-                    # Create a temporary file to hold the extracted content.
-                    with tempfile.TemporaryFile(prefix=os.path.basename(file_info.filename), delete=False) as temp_file:
-                        temp_file.write(file.read())
-                    # Upload the temporary file to S3.
-                    upload_file_to_s3(temp_file.name, file_info.filename, bucket_name, s3_client)
-                    os.remove(temp_file.name)  # Clean up the temporary file.
+    with zip_file.open(file_info) as file:
+        s3_key = file_info.filename
+        s3_client.upload_fileobj(file, bucket_name, s3_key)
 
 
 def main():
@@ -91,7 +104,6 @@ def main():
     Returns:
         None
     """
-    # Parse command-line arguments.
     parser = argparse.ArgumentParser(description="Utility to upload files from a ZIP archive to S3 with concurrency.")
     parser.add_argument("zip_url", help="URL to the ZIP archive")
     parser.add_argument("--bucket", help="S3 bucket name")
@@ -99,7 +111,6 @@ def main():
     parser.add_argument("--verbose", action="store_true", help="Enable verbose output")
     args = parser.parse_args()
 
-    # Initialize S3 client.
     s3_client = boto3.client(
         's3',
         region_name=AWS_REGION_NAME,
@@ -107,26 +118,10 @@ def main():
         aws_secret_access_key=AWS_SECRET_ACCESS_KEY
     )
 
-    # Download the ZIP archive from the provided URL.
     if args.verbose:
         print(f"Downloading ZIP archive from {args.zip_url}")
 
-    zip_content = download_zip(args.zip_url)
-
-    # Extract and upload files concurrently.
-    with concurrent.futures.ThreadPoolExecutor(max_workers=args.concurrency) as executor:
-        # Create a temporary file to hold the downloaded ZIP content.
-        with tempfile.NamedTemporaryFile(delete=False) as zip_file:
-            zip_file.write(zip_content.read())
-
-        if args.verbose:
-            print("Extracting and uploading files to S3")
-
-        # Submit the extraction and upload task.
-        executor.submit(extract_and_upload_file, zip_file.name, args.bucket, s3_client)
-
-        if args.verbose:
-            print(f"Processing with {args.concurrency} concurrency level")
+    extract_and_upload_file(args.zip_url, args.bucket, s3_client, args.concurrency)
 
 
 if __name__ == "__main__":

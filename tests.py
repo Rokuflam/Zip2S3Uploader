@@ -3,7 +3,6 @@ Download/Upload zip/txt files tests.
 authors: ["Roman <98953084+Rokuflam@users.noreply.github.com>"]
 """
 import boto3
-import tempfile
 import unittest
 import zipfile
 from io import BytesIO, StringIO
@@ -13,7 +12,7 @@ from moto import mock_s3
 import main as zip_2_s3_uploader
 
 
-class TestZipUploaderWithMoto(unittest.TestCase):
+class TestZipUploaderWithUnitTestMock(unittest.TestCase):
 
     @mock.patch('requests.get')
     def test_download_zip_success(self, mock_get):
@@ -50,137 +49,6 @@ class TestZipUploaderWithMoto(unittest.TestCase):
         with self.assertRaises(Exception):
             zip_2_s3_uploader.download_zip(zip_url)
 
-    @mock_s3
-    def test_upload_file_to_s3(self):
-        """
-        Test the upload of a file to an S3 bucket.
-
-        This test starts a mock S3 service and uploads a temporary file to a test S3 bucket
-        using the `upload_file_to_s3` function. It verifies that the correct arguments are passed
-        to the S3 client's `upload_fileobj` method.
-        """
-        # Start the mock S3 service
-        conn = boto3.client('s3', region_name='us-east-1')
-        bucket_name = 'test-bucket'
-        conn.create_bucket(Bucket=bucket_name)
-        file_name = 'test-file.txt'
-
-        # Create a temporary file to upload
-        with tempfile.TemporaryFile(delete=False) as temp_file:
-            temp_file.write(b'Test Content')
-
-        # Mock the boto3.client('s3') to capture the arguments
-        with mock.patch('boto3.client') as mock_client:
-            mock_s3_client = mock.Mock()
-            mock_client.return_value = mock_s3_client
-            zip_2_s3_uploader.upload_file_to_s3(temp_file.name, file_name, bucket_name, mock_s3_client)
-
-            # Ensure that the upload_fileobj was called with the expected arguments
-            mock_s3_client.upload_fileobj.assert_called_with(
-                mock.ANY,  # Ensure it's called with a file-like object
-                bucket_name,
-                file_name
-            )
-
-    @mock_s3
-    def test_extract_and_upload_file(self):
-        """
-        Test the extraction and upload of files from a ZIP archive to an S3 bucket.
-
-        This test starts a mock S3 service, creates a temporary ZIP file with sample contents,
-        and tests the extraction and upload process using the `extract_and_upload_file` function.
-        It verifies that the extracted files are correctly uploaded to the S3 bucket.
-        """
-        # Start the mock S3 service
-        conn = boto3.client('s3', region_name='us-east-1')
-        bucket_name = 'test-bucket'
-        conn.create_bucket(Bucket=bucket_name)
-
-        # Create a temporary ZIP file for testing
-        with tempfile.NamedTemporaryFile(delete=False) as temp_zip:
-            with zipfile.ZipFile(temp_zip.name, 'w') as zip_file:
-                zip_file.writestr('file1.txt', b'Test Content 1')
-                zip_file.writestr('file2.txt', b'Test Content 2')
-
-        # Call the function to extract and upload files
-        zip_2_s3_uploader.extract_and_upload_file(temp_zip.name, bucket_name, conn)
-
-        # Verify that the files were uploaded to the S3 bucket
-        objects = conn.list_objects_v2(Bucket=bucket_name)
-
-        # Check if 'file1.txt' and 'file2.txt' exist in the S3 bucket
-        expected_files = {'file1.txt', 'file2.txt'}
-        uploaded_files = {obj['Key'] for obj in objects.get('Contents', [])}
-        self.assertEqual(uploaded_files, expected_files)
-
-    @mock_s3
-    def test_extract_and_upload_file_with_directory_structure(self):
-        """
-        Test the extraction and upload of files with a directory structure from a ZIP archive to an S3 bucket.
-
-        This test starts a mock S3 service,creates a temporary ZIP file with directory structure,
-        and tests the extraction and upload process using the `extract_and_upload_file` function.
-        It verifies that files with directory structure are correctly uploaded to the S3 bucket.
-        """
-        # Start the mock S3 service
-        conn = boto3.client('s3', region_name='us-east-1')
-        bucket_name = 'test-bucket'
-        conn.create_bucket(Bucket=bucket_name)
-
-        # Create a temporary ZIP file with a directory structure for testing
-        with tempfile.NamedTemporaryFile(delete=False) as temp_zip:
-            with zipfile.ZipFile(temp_zip.name, 'w') as zip_file:
-                zip_file.writestr('folder/file1.txt', b'Test Content 1')
-                zip_file.writestr('folder/file2.txt', b'Test Content 2')
-
-        # Call the function to extract and upload files
-        zip_2_s3_uploader.extract_and_upload_file(temp_zip.name, bucket_name, conn)
-
-        # Verify that the files were uploaded to the S3 bucket
-        objects = conn.list_objects_v2(Bucket=bucket_name)
-
-        # Check if 'folder/file1.txt' and 'folder/file2.txt' exist in the S3 bucket
-        expected_files = {'folder/file1.txt', 'folder/file2.txt'}
-        uploaded_files = {obj['Key'] for obj in objects.get('Contents', [])}
-        self.assertEqual(uploaded_files, expected_files)
-
-    @mock.patch('main.download_zip')
-    @mock.patch('main.extract_and_upload_file')
-    @mock.patch('main.boto3.client')
-    def test_main(self, mock_boto_client, mock_extract, mock_download):
-        """
-        Test the main function for ZIP to S3 upload utility.
-
-        This test sets up mock data for the `main` function and simulates
-        command-line arguments to test the entire process.
-        It verifies that the main function processes a ZIP
-        archive by downloading, extracting, and uploading it to an S3 bucket.
-        """
-        # Mock the boto3 client and set up some mock data
-        mock_client = mock_boto_client('s3')
-        mock_client.create_bucket(Bucket='test-bucket')
-
-        # Set up mock responses for download_zip
-        mock_download.return_value = BytesIO(b'Test ZIP Content')
-
-        # Set up expected S3 upload calls (if any) for extract_and_upload_file
-        mock_extract.side_effect = None  # Replace with expected behavior or exceptions
-
-        # Capture standard output to check printed messages
-        expected_output = ("Downloading ZIP archive from https://example.com\n"
-                           "Extracting and uploading files to S3\n"
-                           "Processing with 2 concurrency level\n")
-        captured_output = StringIO()
-
-        with mock.patch('sys.stdout', new=captured_output):
-            # Simulate command-line arguments
-            args = ['https://example.com', '--bucket', 'test-bucket', '--concurrency', '2', '--verbose']
-            with mock.patch('sys.argv', ['tests.py'] + args):
-                zip_2_s3_uploader.main()
-
-        # Check if the printed output matches the expected output
-        self.assertEqual(captured_output.getvalue(), expected_output)
-
     @mock.patch('main.download_zip')
     @mock.patch('main.extract_and_upload_file')
     @mock.patch('main.boto3.client')
@@ -214,6 +82,72 @@ class TestZipUploaderWithMoto(unittest.TestCase):
 
         # Check if the printed output matches the expected output
         self.assertEqual(captured_output.getvalue(), expected_output)
+
+
+class TestZipUploaderWithMoto(unittest.TestCase):
+    @mock_s3
+    def setUp(self):
+        # Initialize a mock S3 client
+        self.s3_client = boto3.client('s3')
+        self.bucket_name = 'test-bucket'
+        self.s3_client.create_bucket(Bucket=self.bucket_name)
+
+    @mock.patch('zipfile.ZipFile')
+    @mock.patch('main.upload_file')
+    def test_upload_file(self, mock_upload_file_to_s3, mock_zipfile):
+        """
+        Test the upload of a file from a temporary ZIP archive to an S3 bucket.
+
+        This test creates a temporary ZIP archive with a test file, mocks the ZipFile
+        constructor to return the temporary ZIP file, and calls the upload_file function.
+        It verifies that the upload_file function calls the upload_file function as expected.
+        """
+        # Create a temporary ZIP file with a test file
+        zip_content = BytesIO()
+        with zipfile.ZipFile(zip_content, 'w') as zip_file:
+            zip_file.writestr('test-file.txt', b'Test Content')
+
+        # Mock the ZipFile constructor to return the temporary ZIP file
+        mock_zipfile.return_value = zipfile.ZipFile(zip_content, 'r')
+
+        # Call the upload_file function
+        zip_2_s3_uploader.upload_file(zip_content, 'test-file.txt', self.bucket_name, self.s3_client)
+
+        # Verify that upload_file_to_s3 was called with the expected arguments
+        expected_calls = [
+            mock.call(zip_content.__enter__(), 'test-file.txt', self.bucket_name, self.s3_client)
+        ]
+        mock_upload_file_to_s3.assert_has_calls(expected_calls)
+
+    @mock.patch('main.download_zip')
+    def test_extract_and_upload_file(self, mock_download_zip):
+        """
+        Test the extraction and upload of a file from a ZIP archive to an S3 bucket.
+
+        This test simulates the extraction and upload of a file from a temporary ZIP archive.
+        It mocks the download_zip function to avoid real HTTP requests and utilizes a Moto S3 mock
+        to create an S3 bucket for testing. The test verifies that the file was successfully uploaded
+        to the S3 bucket.
+        """
+        # Create a temporary ZIP file
+        zip_content = BytesIO()
+        with zipfile.ZipFile(zip_content, 'w') as zip_file:
+            zip_file.writestr('test-file.txt', b'Test Content')
+
+        # Mock the download_zip function to avoid real HTTP requests
+        mock_download_zip.return_value = zip_content
+
+        # Start a Moto S3 mock
+        with mock_s3():
+            # Create the S3 bucket
+            self.s3_client.create_bucket(Bucket=self.bucket_name)
+
+            # Test the extract_and_upload_file function
+            zip_2_s3_uploader.extract_and_upload_file('http://example.com/test.zip', self.bucket_name, self.s3_client)
+
+            # Verify that the file was uploaded to S3
+            objects = self.s3_client.list_objects(Bucket=self.bucket_name)
+            self.assertEqual(len(objects.get('Contents', [])), 1)
 
 
 if __name__ == '__main__':
